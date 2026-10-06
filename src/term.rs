@@ -1,5 +1,5 @@
-//! Console presentation: ANSI colours (only when stdout is a terminal that
-//! renders them) and the drag-and-drop exit pause.
+//! Console presentation: window title, ANSI colours (only when stdout is a
+//! terminal that renders them) and the drag-and-drop exit pause.
 
 use std::fmt;
 use std::io::{self, IsTerminal};
@@ -7,8 +7,21 @@ use std::io::{self, IsTerminal};
 #[cfg(windows)]
 use windows_sys::Win32::System::Console::{
     ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetConsoleProcessList, GetStdHandle,
-    STD_OUTPUT_HANDLE, SetConsoleMode,
+    STD_OUTPUT_HANDLE, SetConsoleMode, SetConsoleTitleW,
 };
+
+/// Sets the console window (or terminal tab) title.
+#[cfg(windows)]
+pub fn set_title(title: &str) {
+    let wide: Vec<u16> = title.encode_utf16().chain([0]).collect();
+    // SAFETY: `wide` is a NUL-terminated UTF-16 string that outlives the call.
+    unsafe {
+        SetConsoleTitleW(wide.as_ptr());
+    }
+}
+
+#[cfg(not(windows))]
+pub fn set_title(_title: &str) {}
 
 /// Erases from the cursor to the end of the line.
 pub const ERASE_LINE_END: &str = "\x1b[K";

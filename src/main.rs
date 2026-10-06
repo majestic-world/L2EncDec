@@ -20,6 +20,8 @@ use codec::Operation;
 use progress::Progress;
 use term::{Painter, Style};
 
+/// Console window title.
+const WINDOW_TITLE: &str = concat!("L2Enc By Mk v", env!("CARGO_PKG_VERSION"));
 const TITLE: &str = "L2 Encoder/Decoder";
 const TAGLINE: &str = "By Mk (Majestic World Studio)";
 const FORMATS: &str =
@@ -33,6 +35,7 @@ const PROGRESS_TICK: Duration = Duration::from_millis(50);
 
 fn main() -> ExitCode {
     let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    term::set_title(WINDOW_TITLE);
     let painter = Painter::detect();
     println!(
         "{} {}",
