@@ -2,6 +2,7 @@
 name = "l2-enc-dec"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 # Windows version resource (Properties > Details), embedded by build.rs.
 # FileVersion and ProductVersion come from `version` above.
