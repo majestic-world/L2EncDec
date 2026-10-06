@@ -17,3 +17,9 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 [lints.cargo]
 # The shipped executable is deliberately named L2Enc.exe.
 non_kebab_case_bins = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
