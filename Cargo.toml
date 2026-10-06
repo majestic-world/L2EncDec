@@ -3,4 +3,17 @@ name = "l2-enc-dec"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "L2Enc"
+path = "src/main.rs"
+
 [dependencies]
+flate2 = "1.1"
+num-bigint = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[lints.cargo]
+# The shipped executable is deliberately named L2Enc.exe.
+non_kebab_case_bins = "allow"
