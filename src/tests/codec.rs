@@ -23,6 +23,7 @@ fn assert_toggles_back(file_name: &str, data: &[u8]) {
 fn raw_unreal_selects_121_for_textures_and_111_otherwise() {
     let data = unreal_package();
     assert_eq!(select("pledge.utx", &data), Ok(Operation::Encrypt121));
+    assert_eq!(select("PLEDGE.UTX", &data), Ok(Operation::Encrypt121));
     assert_eq!(select("entry.unr", &data), Ok(Operation::Encrypt111));
     assert_eq!(select("x.bak", &data), Ok(Operation::Encrypt111));
 }

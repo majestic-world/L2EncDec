@@ -1,9 +1,35 @@
 use super::*;
 
+/// Files encrypted by mxencdec v2.1 from the plain bytes beside them.
+const MXENCDEC_111: &[u8] = include_bytes!("fixtures/fixture.int");
+const PLAIN_111: &[u8] = b"[General]\r\nName=L2Enc fixture\r\n";
+const MXENCDEC_121: &[u8] = include_bytes!("fixtures/fixture.utx");
+const PLAIN_121: &[u8] = b"\xC1\x83\x2A\x9EL2Enc texture fixture";
+
 fn container(version: u16, payload: &[u8]) -> Vec<u8> {
     let mut data = container_header(version).to_vec();
     data.extend_from_slice(payload);
     data
+}
+
+#[test]
+fn encrypt_matches_mxencdec_byte_for_byte() {
+    assert_eq!(encrypt_111(PLAIN_111), MXENCDEC_111);
+    assert_eq!(encrypt_121(PLAIN_121, "fixture.utx"), MXENCDEC_121);
+}
+
+#[test]
+fn decrypt_reads_mxencdec_output() {
+    assert_eq!(decrypt_111(MXENCDEC_111), PLAIN_111);
+    // Inferred key (texture) and file-name key (any other class) both apply.
+    assert_eq!(
+        decrypt_121(MXENCDEC_121, "fixture.utx", FileClass::Texture),
+        PLAIN_121
+    );
+    assert_eq!(
+        decrypt_121(MXENCDEC_121, "fixture.utx", FileClass::Other),
+        PLAIN_121
+    );
 }
 
 #[test]

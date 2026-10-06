@@ -49,10 +49,16 @@ impl Operation {
     }
 
     pub fn is_encrypt(self) -> bool {
-        matches!(
-            self,
-            Self::Encrypt111 | Self::Encrypt121 | Self::Encrypt413 | Self::EncryptOgg
-        )
+        match self {
+            Self::Encrypt111 | Self::Encrypt121 | Self::Encrypt413 | Self::EncryptOgg => true,
+            Self::Decrypt111
+            | Self::Decrypt120
+            | Self::Decrypt121
+            | Self::Decrypt211
+            | Self::Decrypt212
+            | Self::Decrypt413
+            | Self::DecryptOgg => false,
+        }
     }
 }
 
@@ -64,6 +70,8 @@ pub enum CodecError {
     /// Container whose version is not handled; holds the 3 decoded characters.
     UnsupportedVersion(String),
     Rsa413Invalid,
+    /// Plain file too large for the 32-bit size field of a 413 stream.
+    TooLargeFor413,
 }
 
 impl fmt::Display for CodecError {
@@ -76,6 +84,7 @@ impl fmt::Display for CodecError {
             Self::Rsa413Invalid => {
                 f.write_str("Lineage2Ver413 payload does not decrypt under either RSA key")
             }
+            Self::TooLargeFor413 => f.write_str("file is too large for Lineage2Ver413 (4 GiB max)"),
         }
     }
 }
@@ -93,16 +102,22 @@ pub(crate) enum FileClass {
 }
 
 pub(crate) fn classify(file_name: &str) -> FileClass {
-    let name = file_name.to_ascii_lowercase();
-    let (stem, ext) = name.rsplit_once('.').unwrap_or((name.as_str(), ""));
-    match (stem, ext) {
-        (_, "utx" | "ugx" | "bmp") => FileClass::Texture,
-        (_, "uax" | "unr" | "uix" | "ukx" | "usx" | "usk" | "u") => FileClass::Package,
-        (_, "dat") | ("l2" | "user", "ini") => FileClass::Rsa,
-        (_, "htm" | "int") | ("interface", "xdat") | ("ttfontinfo" | "localization", "ini") => {
-            FileClass::Text
-        }
-        _ => FileClass::Other,
+    let (stem, ext) = file_name.rsplit_once('.').unwrap_or((file_name, ""));
+    let ext_is = |names: &[&str]| names.iter().any(|name| ext.eq_ignore_ascii_case(name));
+    let stem_is = |names: &[&str]| names.iter().any(|name| stem.eq_ignore_ascii_case(name));
+    if ext_is(&["utx", "ugx", "bmp"]) {
+        FileClass::Texture
+    } else if ext_is(&["uax", "unr", "uix", "ukx", "usx", "usk", "u"]) {
+        FileClass::Package
+    } else if ext_is(&["dat"]) || (ext_is(&["ini"]) && stem_is(&["l2", "user"])) {
+        FileClass::Rsa
+    } else if ext_is(&["htm", "int"])
+        || (ext_is(&["xdat"]) && stem_is(&["interface"]))
+        || (ext_is(&["ini"]) && stem_is(&["ttfontinfo", "localization"]))
+    {
+        FileClass::Text
+    } else {
+        FileClass::Other
     }
 }
 
@@ -117,7 +132,9 @@ pub fn select(file_name: &str, data: &[u8]) -> Result<Operation, CodecError> {
     let operation = if data.starts_with(UNREAL_MAGIC) {
         match classify(file_name) {
             FileClass::Texture => Operation::Encrypt121,
-            _ => Operation::Encrypt111,
+            FileClass::Package | FileClass::Rsa | FileClass::Text | FileClass::Other => {
+                Operation::Encrypt111
+            }
         }
     } else if data.starts_with(OGG_MAGIC) {
         Operation::EncryptOgg
@@ -182,7 +199,7 @@ pub fn apply(
         Operation::DecryptOgg => with_magic(data, OGG_MAGIC),
         Operation::Encrypt111 => xor::encrypt_111(data),
         Operation::Encrypt121 => xor::encrypt_121(data, file_name),
-        Operation::Encrypt413 => rsa413::encrypt(data, progress),
+        Operation::Encrypt413 => rsa413::encrypt(data, progress)?,
         Operation::EncryptOgg => with_magic(data, L2SD_MAGIC),
     };
     Ok(out)
@@ -195,17 +212,15 @@ fn with_magic(data: &[u8], magic: &[u8; 4]) -> Vec<u8> {
     out
 }
 
-/// `Lineage2Ver<NNN>` in UTF-16LE.
+/// `Lineage2Ver<NNN>` in UTF-16LE; `version` has at most 3 digits.
 pub(crate) fn container_header(version: u16) -> [u8; HEADER_LEN] {
+    debug_assert!(version < 1000, "container versions have 3 digits");
     let mut header = [0; HEADER_LEN];
-    let text = format!("Lineage2Ver{version:03}");
-    for (slot, unit) in header
-        .as_chunks_mut::<2>()
-        .0
-        .iter_mut()
-        .zip(text.encode_utf16())
-    {
-        *slot = unit.to_le_bytes();
+    let (prefix, digits) = header.split_at_mut(CONTAINER_PREFIX.len());
+    prefix.copy_from_slice(CONTAINER_PREFIX);
+    let values = [version / 100, version / 10 % 10, version % 10];
+    for (slot, value) in digits.as_chunks_mut::<2>().0.iter_mut().zip(values) {
+        *slot = (u16::from(b'0') + value).to_le_bytes();
     }
     header
 }

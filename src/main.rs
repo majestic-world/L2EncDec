@@ -46,6 +46,11 @@ fn main() -> ExitCode {
 
     if paths.is_empty() {
         println!(
+            "{} {}",
+            painter.paint(Style::Strong, "Version:"),
+            env!("CARGO_PKG_VERSION")
+        );
+        println!(
             "{} drag & drop files onto L2Enc.exe, or run: L2Enc <file>...",
             painter.paint(Style::Strong, "Usage:")
         );
