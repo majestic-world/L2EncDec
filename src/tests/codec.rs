@@ -6,10 +6,16 @@ fn unreal_package() -> Vec<u8> {
     data
 }
 
+/// Selects and applies the toggle, as the CLI does for one dropped file.
+fn toggle(file_name: &str, data: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let operation = select(file_name, data)?;
+    apply(operation, file_name, data, &Progress::new())
+}
+
 fn assert_toggles_back(file_name: &str, data: &[u8]) {
-    let (_, encrypted) = transform(file_name, data).expect("first toggle");
+    let encrypted = toggle(file_name, data).expect("first toggle");
     assert_ne!(encrypted, data);
-    let (_, restored) = transform(file_name, &encrypted).expect("second toggle");
+    let restored = toggle(file_name, &encrypted).expect("second toggle");
     assert_eq!(restored, data);
 }
 
@@ -59,7 +65,7 @@ fn empty_and_truncated_inputs_are_rejected() {
 }
 
 #[test]
-fn transform_twice_restores_the_original() {
+fn toggling_twice_restores_the_original() {
     assert_toggles_back("pledge.utx", &unreal_package());
     assert_toggles_back("entry.unr", &unreal_package());
     assert_toggles_back(

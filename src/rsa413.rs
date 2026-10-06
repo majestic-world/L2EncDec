@@ -13,6 +13,7 @@ use flate2::write::ZlibEncoder;
 use num_bigint::BigUint;
 
 use crate::codec::{CodecError, HEADER_LEN, container_header};
+use crate::progress::Progress;
 
 const BLOCK_LEN: usize = 128;
 /// Largest chunk a block carries: the block minus its 4-byte size prefix.
@@ -20,6 +21,8 @@ const CHUNK_LEN: usize = 124;
 const TRAILER_LEN: usize = 20;
 /// Offset of the little-endian CRC32 inside the trailer.
 const TRAILER_CRC_OFFSET: usize = 12;
+/// Raw bytes fed to zlib between progress updates.
+const COMPRESS_PIECE_LEN: usize = 256 * 1024;
 
 /// Community ("modified") key pair: the private exponent is known, so files
 /// can be both decrypted and encrypted.
@@ -51,7 +54,7 @@ static KEYS: LazyLock<Keys> = LazyLock::new(|| {
 
 /// Decrypts a whole 413 container (at least [`HEADER_LEN`] bytes). The trailer
 /// is optional: only complete blocks are read.
-pub fn decrypt(data: &[u8]) -> Result<Vec<u8>, CodecError> {
+pub fn decrypt(data: &[u8], progress: &Progress) -> Result<Vec<u8>, CodecError> {
     let body = &data[HEADER_LEN..];
     let block_count = body.len() / BLOCK_LEN;
     if block_count == 0 {
@@ -65,24 +68,31 @@ pub fn decrypt(data: &[u8]) -> Result<Vec<u8>, CodecError> {
     ]
     .into_iter()
     .find_map(|(modulus, exponent)| {
-        decrypt_stream(blocks, modulus, exponent).and_then(|stream| inflate(&stream))
+        progress.start_phase(0, 1, block_count);
+        decrypt_stream(blocks, modulus, exponent, progress).and_then(|stream| inflate(&stream))
     })
     .ok_or(CodecError::Rsa413Invalid)
 }
 
-/// Encrypts `raw` into a 413 container with the modified key.
-pub fn encrypt(raw: &[u8]) -> Vec<u8> {
+/// Encrypts `raw` into a 413 container with the modified key. Progress has two
+/// phases: compression, then sealing the RSA blocks.
+pub fn encrypt(raw: &[u8], progress: &Progress) -> Vec<u8> {
     let raw_len = u32::try_from(raw.len()).expect("413 payload must be smaller than 4 GiB");
+    progress.start_phase(0, 2, raw.len());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder
-        .write_all(raw)
-        .expect("writing to a Vec cannot fail");
+    for piece in raw.chunks(COMPRESS_PIECE_LEN) {
+        encoder
+            .write_all(piece)
+            .expect("writing to a Vec cannot fail");
+        progress.advance(piece.len());
+    }
     let compressed = encoder.finish().expect("writing to a Vec cannot fail");
 
     let mut stream = Vec::with_capacity(4 + compressed.len());
     stream.extend_from_slice(&raw_len.to_le_bytes());
     stream.extend_from_slice(&compressed);
-    let blocks = encrypt_stream(&stream);
+    progress.start_phase(1, 2, stream.len().div_ceil(CHUNK_LEN));
+    let blocks = encrypt_stream(&stream, progress);
 
     let mut out = Vec::with_capacity(HEADER_LEN + blocks.len() + TRAILER_LEN);
     out.extend_from_slice(&container_header(413));
@@ -109,7 +119,12 @@ fn to_block(n: &BigUint) -> [u8; BLOCK_LEN] {
 
 /// Opens every block of `body` (a whole number of blocks) and concatenates the
 /// chunks. `None` when a block size is impossible, meaning the key is wrong.
-fn decrypt_stream(body: &[u8], modulus: &BigUint, exponent: &BigUint) -> Option<Vec<u8>> {
+fn decrypt_stream(
+    body: &[u8],
+    modulus: &BigUint,
+    exponent: &BigUint,
+    progress: &Progress,
+) -> Option<Vec<u8>> {
     let block_count = body.len() / BLOCK_LEN;
     let mut stream = Vec::with_capacity(block_count * CHUNK_LEN);
     for (index, block) in body.as_chunks::<BLOCK_LEN>().0.iter().enumerate() {
@@ -121,6 +136,7 @@ fn decrypt_stream(body: &[u8], modulus: &BigUint, exponent: &BigUint) -> Option<
         }
         let start = BLOCK_LEN - align4(size);
         stream.extend_from_slice(&plain[start..start + size]);
+        progress.advance(1);
     }
     Some(stream)
 }
@@ -133,9 +149,10 @@ fn inflate(stream: &[u8]) -> Option<Vec<u8>> {
     (out.len() == u32::from_le_bytes(*size) as usize).then_some(out)
 }
 
-/// Seals `stream` into RSA blocks (no header or trailer). The private-key
-/// exponentiation dominates, so blocks are spread across all cores.
-fn encrypt_stream(stream: &[u8]) -> Vec<u8> {
+/// Seals `stream` into RSA blocks (no header or trailer), advancing `progress`
+/// by one unit per block. The private-key exponentiation dominates, so blocks
+/// are spread across all cores.
+fn encrypt_stream(stream: &[u8], progress: &Progress) -> Vec<u8> {
     let block_count = stream.len().div_ceil(CHUNK_LEN);
     let mut out = vec![0u8; block_count * BLOCK_LEN];
     if block_count == 0 {
@@ -152,6 +169,7 @@ fn encrypt_stream(stream: &[u8]) -> Vec<u8> {
             scope.spawn(move || {
                 for (chunk, block) in chunks.chunks(CHUNK_LEN).zip(blocks.chunks_mut(BLOCK_LEN)) {
                     block.copy_from_slice(&encrypt_block(chunk, keys));
+                    progress.advance(1);
                 }
             });
         }

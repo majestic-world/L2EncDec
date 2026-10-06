@@ -13,19 +13,29 @@ fn noise(len: usize) -> Vec<u8> {
 
 fn stream_round_trip(stream: &[u8]) -> Option<Vec<u8>> {
     let keys = &*KEYS;
-    decrypt_stream(&encrypt_stream(stream), &keys.modified_n, &keys.modified_e)
+    let progress = Progress::new();
+    let sealed = encrypt_stream(stream, &progress);
+    decrypt_stream(&sealed, &keys.modified_n, &keys.modified_e, &progress)
 }
 
 #[test]
-fn decrypt_restores_encrypted_payload() {
+fn decrypt_restores_encrypted_payload_and_both_complete_progress() {
     let raw = noise(1000);
-    assert_eq!(decrypt(&encrypt(&raw)), Ok(raw));
+    let encrypt_progress = Progress::new();
+    let encrypted = encrypt(&raw, &encrypt_progress);
+    assert_eq!(encrypt_progress.fraction(), 1.0);
+    let decrypt_progress = Progress::new();
+    assert_eq!(decrypt(&encrypted, &decrypt_progress), Ok(raw));
+    assert_eq!(decrypt_progress.fraction(), 1.0);
 }
 
 #[test]
 fn stream_of_exact_block_multiple_keeps_its_last_block() {
     let stream = noise(2 * CHUNK_LEN);
-    assert_eq!(encrypt_stream(&stream).len(), 2 * BLOCK_LEN);
+    assert_eq!(
+        encrypt_stream(&stream, &Progress::new()).len(),
+        2 * BLOCK_LEN
+    );
     assert_eq!(stream_round_trip(&stream), Some(stream));
 }
 
@@ -37,7 +47,7 @@ fn stream_with_partial_last_block_round_trips() {
 
 #[test]
 fn trailer_stores_crc_of_header_and_blocks() {
-    let out = encrypt(&noise(500));
+    let out = encrypt(&noise(500), &Progress::new());
     let body_end = out.len() - TRAILER_LEN;
     let mut crc = Crc::new();
     crc.update(&out[..body_end]);
@@ -48,6 +58,9 @@ fn trailer_stores_crc_of_header_and_blocks() {
 #[test]
 fn decrypt_accepts_missing_trailer() {
     let raw = noise(700);
-    let out = encrypt(&raw);
-    assert_eq!(decrypt(&out[..out.len() - TRAILER_LEN]), Ok(raw));
+    let out = encrypt(&raw, &Progress::new());
+    assert_eq!(
+        decrypt(&out[..out.len() - TRAILER_LEN], &Progress::new()),
+        Ok(raw)
+    );
 }

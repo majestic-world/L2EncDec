@@ -10,6 +10,12 @@ use windows_sys::Win32::System::Console::{
     STD_OUTPUT_HANDLE, SetConsoleMode,
 };
 
+/// Erases from the cursor to the end of the line.
+pub const ERASE_LINE_END: &str = "\x1b[K";
+const BAR_WIDTH: usize = 24;
+const BAR_FILLED: &str = "█";
+const BAR_EMPTY: &str = "░";
+
 #[derive(Debug, Clone, Copy)]
 pub enum Style {
     Title,
@@ -55,6 +61,24 @@ impl Painter {
             style: self.enabled.then_some(style),
             text,
         }
+    }
+
+    /// Whether the terminal renders escape codes, so a row can be redrawn in
+    /// place (needed to animate a progress bar).
+    pub fn is_live(&self) -> bool {
+        self.enabled
+    }
+
+    /// `fraction` (`0.0..=1.0`) as a bar plus percentage, e.g. `█████░░░░░  50%`.
+    pub fn progress_bar(&self, style: Style, fraction: f64) -> String {
+        let fraction = fraction.clamp(0.0, 1.0);
+        let filled = (fraction * BAR_WIDTH as f64).round() as usize;
+        let percent = (fraction * 100.0).floor() as u32;
+        format!(
+            "{}{} {percent:>3}%",
+            self.paint(style, &BAR_FILLED.repeat(filled)),
+            self.paint(Style::Muted, &BAR_EMPTY.repeat(BAR_WIDTH - filled)),
+        )
     }
 }
 

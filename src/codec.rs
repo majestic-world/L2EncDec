@@ -3,6 +3,7 @@
 
 use std::fmt;
 
+use crate::progress::Progress;
 use crate::{rsa413, xor};
 
 /// Length of the `Lineage2VerNNN` container header (14 UTF-16LE code units).
@@ -163,23 +164,28 @@ fn container_operation(data: &[u8]) -> Result<Operation, CodecError> {
     }
 }
 
-/// Toggles `data`: decrypts an encrypted file, encrypts a plain one.
-pub fn transform(file_name: &str, data: &[u8]) -> Result<(Operation, Vec<u8>), CodecError> {
-    let operation = select(file_name, data)?;
+/// Runs `operation` (as chosen by [`select`]) on `data`, reporting progress for
+/// the slow RSA path; the XOR and OGG paths finish instantly.
+pub fn apply(
+    operation: Operation,
+    file_name: &str,
+    data: &[u8],
+    progress: &Progress,
+) -> Result<Vec<u8>, CodecError> {
     let out = match operation {
         Operation::Decrypt111 => xor::decrypt_111(data),
         Operation::Decrypt120 => xor::decrypt_120(data),
         Operation::Decrypt121 => xor::decrypt_121(data, file_name, classify(file_name)),
         Operation::Decrypt211 => xor::decrypt_211(data),
         Operation::Decrypt212 => xor::decrypt_212(data),
-        Operation::Decrypt413 => rsa413::decrypt(data)?,
+        Operation::Decrypt413 => rsa413::decrypt(data, progress)?,
         Operation::DecryptOgg => with_magic(data, OGG_MAGIC),
         Operation::Encrypt111 => xor::encrypt_111(data),
         Operation::Encrypt121 => xor::encrypt_121(data, file_name),
-        Operation::Encrypt413 => rsa413::encrypt(data),
+        Operation::Encrypt413 => rsa413::encrypt(data, progress),
         Operation::EncryptOgg => with_magic(data, L2SD_MAGIC),
     };
-    Ok((operation, out))
+    Ok(out)
 }
 
 /// Copies `data` (at least 4 bytes) with its first 4 bytes replaced by `magic`.
