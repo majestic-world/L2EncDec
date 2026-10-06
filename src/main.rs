@@ -15,8 +15,8 @@ use std::process::ExitCode;
 use codec::Operation;
 use term::{Painter, Style};
 
-const TITLE: &str = concat!("L2Enc ", env!("CARGO_PKG_VERSION"));
-const TAGLINE: &str = "Encoder/Decoder for Lineage II files";
+const TITLE: &str = "L2 Encoder/Decoder";
+const TAGLINE: &str = "By Mk (Majestic World Studio)";
 const FORMATS: &str =
     "  bmp, dat, htm, ini, int, ogg, u, uax,\n  ugx, uix, ukx, unr, usk, usx, utx, xdat";
 /// Width of the longest operation label (`decrypt 121`, `encrypt OGG`, ...).
@@ -28,7 +28,7 @@ fn main() -> ExitCode {
     let paths: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     let painter = Painter::detect();
     println!(
-        "{}  {}",
+        "{} {}",
         painter.paint(Style::Title, TITLE),
         painter.paint(Style::Muted, TAGLINE)
     );
