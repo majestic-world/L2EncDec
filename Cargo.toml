@@ -3,6 +3,16 @@ name = "l2-enc-dec"
 version = "0.1.0"
 edition = "2024"
 
+# Windows version resource (Properties > Details), embedded by build.rs.
+# FileVersion and ProductVersion come from `version` above.
+[package.metadata.winresource]
+ProductName = "L2Enc"
+FileDescription = "L2 Encoder/Decoder"
+CompanyName = "Majestic World Studio"
+LegalCopyright = "Copyright © 2026 Mk (Majestic World Studio)"
+OriginalFilename = "L2Enc.exe"
+InternalName = "L2Enc"
+
 [[bin]]
 name = "L2Enc"
 path = "src/main.rs"
@@ -13,6 +23,9 @@ num-bigint = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[build-dependencies]
+winresource = "0.1"
 
 [lints.cargo]
 # The shipped executable is deliberately named L2Enc.exe.
